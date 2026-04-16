@@ -12,13 +12,13 @@ Features:
 ### Wayback
 
 ```bash
-go run ./cmd/wayback <domain> [path-prefix]
+go run ./cmd/wayback/main.go <domain> [path-prefix]
 ```
 
 ### Access Log Parser
 
 ```bash
-go run ./cmd/accesslog <log-file> <input-format-pattern>
+go run ./cmd/accesslog/main.go <log-file-path> <input-format-pattern>
 ```
 
 Example pattern (nginx-like):
@@ -33,3 +33,17 @@ The following placeholders have meaning for this scanner:
 - path
 - method
 - status
+
+### Swagger Parser
+
+```bash
+go run ./cmd/swagger/main.go <swagger-file-path>
+```
+
+### Match Parser
+
+This tool lets you combine the other three and merges the results.
+
+```bash
+match [-swagger <file>] [-accesslog <file> -log-pattern <pattern>] [-wayback <domain> [-path-prefix <prefix>]]
+```
