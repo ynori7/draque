@@ -42,7 +42,7 @@ go run ./cmd/swagger/main.go <swagger-file-path>
 
 ### Match Parser
 
-This tool lets you combine the other three and merges the results.
+This tool lets you combine the other three and merges the results. Brackets signify that the parameter is optional.
 
 ```bash
 match [-swagger <file>] [-accesslog <file> -log-pattern <pattern>] [-wayback <domain> [-path-prefix <prefix>]]

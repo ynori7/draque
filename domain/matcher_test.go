@@ -226,9 +226,9 @@ func TestMatchTemplates_SumsCounts(t *testing.T) {
 }
 
 func TestMatchTemplates_CombinesObservations(t *testing.T) {
-	obs1 := ExampleURL{Source: "wayback", URL: "http://example.com/api/users/123"}
-	obs2 := ExampleURL{Source: "logs", URL: "http://example.com/api/users/456"}
-	duplicate := ExampleURL{Source: "logs", URL: "http://example.com/api/users/456"} // same as obs2
+	obs1 := ExampleURL{Source: "wayback", URL: "http://example.com/api/users/123", StatusCode: 200}
+	obs2 := ExampleURL{Source: "logs", URL: "http://example.com/api/users/456", StatusCode: 200}
+	duplicate := ExampleURL{Source: "logs", URL: "http://example.com/api/users/456", StatusCode: 200} // same as obs2
 
 	source1 := []EndpointTemplate{{
 		Method:       "GET",
@@ -294,14 +294,14 @@ func TestMatchTemplates_ThreeWayMerge(t *testing.T) {
 		Method:       "",
 		PathTemplate: "/api/products/{id}",
 		Parameters:   []Parameter{{Name: "id", Type: "int", Source: "inferred"}},
-		Observations: []ExampleURL{{Source: "wayback", URL: "http://example.com/api/products/42"}},
+		Observations: []ExampleURL{{Source: "wayback", URL: "http://example.com/api/products/42", StatusCode: 200}},
 		Count:        3,
 	}}
 	logs := []EndpointTemplate{{
 		Method:       "GET",
 		PathTemplate: "/api/products/{id}",
 		Parameters:   []Parameter{{Name: "id", Type: "int", Source: "inferred"}},
-		Observations: []ExampleURL{{Source: "logs", URL: "http://example.com/api/products/99"}},
+		Observations: []ExampleURL{{Source: "logs", URL: "http://example.com/api/products/99", StatusCode: 200}},
 		Count:        7,
 	}}
 
@@ -365,7 +365,7 @@ func TestMatchTemplates_EmptyMethodDefaultsToGET(t *testing.T) {
 		Method:       "",
 		PathTemplate: "/api/users/{id}",
 		Parameters:   []Parameter{{Name: "id", Type: "int", Source: "inferred"}},
-		Observations: []ExampleURL{{Source: "wayback", URL: "http://example.com/api/users/7"}},
+		Observations: []ExampleURL{{Source: "wayback", URL: "http://example.com/api/users/7", StatusCode: 200}},
 		Count:        4,
 	}}
 

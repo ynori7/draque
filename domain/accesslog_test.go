@@ -204,8 +204,8 @@ func TestParseAccessLogDefaultsWhenMethodAndStatusAreMissing(t *testing.T) {
 				{Name: "id", Type: "int", Source: "inferred"},
 			},
 			Observations: []ExampleURL{
-				{Source: "logs", URL: "https://example.com/api/widgets/100"},
-				{Source: "logs", URL: "https://example.com/api/widgets/200"},
+				{Source: "logs", URL: "https://example.com/api/widgets/100", StatusCode: 200},
+				{Source: "logs", URL: "https://example.com/api/widgets/200", StatusCode: 200},
 			},
 			Count: 2,
 		},

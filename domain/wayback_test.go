@@ -55,18 +55,18 @@ func TestWaybackFetcherFetchURLsFiltersAndDeduplicates(t *testing.T) {
 		HTTPClient: server.Client(),
 	}
 
-	urls, err := fetcher.FetchURLs(context.Background(), "example.com", "/api")
+	records, err := fetcher.FetchURLs(context.Background(), "example.com", "/api")
 	if err != nil {
 		t.Fatalf("FetchURLs returned error: %v", err)
 	}
 
-	want := []string{
-		"https://example.com/api/users?a=1&b=2",
-		"http://example.com/api/widgets",
+	want := []urlRecord{
+		{URL: "https://example.com/api/users?a=1&b=2", StatusCode: "200"},
+		{URL: "http://example.com/api/widgets", StatusCode: "200"},
 	}
 
-	if !reflect.DeepEqual(urls, want) {
-		t.Fatalf("unexpected URLs\nwant: %#v\ngot:  %#v", want, urls)
+	if !reflect.DeepEqual(records, want) {
+		t.Fatalf("unexpected records\nwant: %#v\ngot:  %#v", want, records)
 	}
 }
 
@@ -112,17 +112,17 @@ func TestWaybackFetcherFetchURLsUsesPagination(t *testing.T) {
 		PageSize:   1,
 	}
 
-	urls, err := fetcher.FetchURLs(context.Background(), "example.com", "")
+	records, err := fetcher.FetchURLs(context.Background(), "example.com", "")
 	if err != nil {
 		t.Fatalf("FetchURLs returned error: %v", err)
 	}
 
-	wantURLs := []string{
-		"https://example.com/api/one",
-		"https://example.com/api/two",
+	wantRecords := []urlRecord{
+		{URL: "https://example.com/api/one", StatusCode: "200"},
+		{URL: "https://example.com/api/two", StatusCode: "200"},
 	}
-	if !reflect.DeepEqual(urls, wantURLs) {
-		t.Fatalf("unexpected URLs\nwant: %#v\ngot:  %#v", wantURLs, urls)
+	if !reflect.DeepEqual(records, wantRecords) {
+		t.Fatalf("unexpected records\nwant: %#v\ngot:  %#v", wantRecords, records)
 	}
 
 	wantPages := []string{"0", "1"}

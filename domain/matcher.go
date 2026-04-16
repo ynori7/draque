@@ -96,13 +96,17 @@ func appendUniqueExamples(dst []ExampleParameter, src ...ExampleParameter) []Exa
 }
 
 func appendUniqueObservations(dst []ExampleURL, src ...ExampleURL) []ExampleURL {
-	type key struct{ Source, URL string }
+	type key struct {
+		Source     string
+		URL        string
+		StatusCode int
+	}
 	seen := make(map[key]struct{}, len(dst))
 	for _, o := range dst {
-		seen[key{o.Source, o.URL}] = struct{}{}
+		seen[key{o.Source, o.URL, o.StatusCode}] = struct{}{}
 	}
 	for _, o := range src {
-		k := key{o.Source, o.URL}
+		k := key{o.Source, o.URL, o.StatusCode}
 		if _, ok := seen[k]; !ok {
 			dst = append(dst, o)
 			seen[k] = struct{}{}

@@ -26,8 +26,9 @@ type ExampleParameter struct {
 
 // ExampleURL captures a normalized source URL that contributed to an endpoint template.
 type ExampleURL struct {
-	Source string `json:"source"`
-	URL    string `json:"url"` // normalized URL (not raw)
+	Source     string `json:"source"`
+	URL        string `json:"url"`         // normalized URL (not raw)
+	StatusCode int    `json:"status_code"` // HTTP status code; 0 means unknown
 }
 
 // NormalizedPath is the output of URL normalization: a path template with inferred parameters.
@@ -35,4 +36,12 @@ type ExampleURL struct {
 type NormalizedPath struct {
 	Template   string      `json:"template"`
 	Parameters []Parameter `json:"parameters"`
+}
+
+// endpointObservation is an internal model to capture a single observed URL, HTTP method, 
+// and status code that contributed to an endpoint template.
+type endpointObservation struct {
+	URL        string
+	Method     string
+	StatusCode int // 0 means unknown
 }

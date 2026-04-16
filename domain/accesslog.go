@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -137,9 +138,15 @@ func ParseAccessLogWithPattern(filePath string, pattern *AccessLogPattern) ([]En
 			continue
 		}
 
+		var statusInt int
+		if sc, err := strconv.Atoi(statusCode); err == nil {
+			statusInt = sc
+		}
+
 		observations = append(observations, endpointObservation{
-			URL:    normalizedURL,
-			Method: method,
+			URL:        normalizedURL,
+			Method:     method,
+			StatusCode: statusInt,
 		})
 	}
 
@@ -148,6 +155,12 @@ func ParseAccessLogWithPattern(filePath string, pattern *AccessLogPattern) ([]En
 	}
 
 	return aggregateEndpoints(observations, "logs"), nil
+}
+
+// TryParseLine reports whether the given log line matches this pattern.
+func (p *AccessLogPattern) TryParseLine(line string) bool {
+	_, _, _, _, ok := p.parseLine(line)
+	return ok
 }
 
 func (p *AccessLogPattern) parseLine(line string) (string, string, string, string, bool) {

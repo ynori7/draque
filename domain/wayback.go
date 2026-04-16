@@ -49,25 +49,30 @@ func FetchWaybackURLs(ctx context.Context, domain string, pathPrefix string) ([]
 		},
 	}
 
-	urls, err := fetcher.FetchURLs(ctx, domain, pathPrefix)
+	records, err := fetcher.FetchURLs(ctx, domain, pathPrefix)
 	if err != nil {
 		return nil, err
 	}
 
-	return aggregateEndpoints(urlsToObservations(urls), "wayback"), nil
+	return aggregateEndpoints(urlRecordsToObservations(records), "wayback"), nil
 }
 
-type endpointObservation struct {
-	URL    string
-	Method string
+// urlRecord is a lightweight pair of (normalized URL, HTTP status code string) returned
+// by FetchURLs. StatusCode is the raw string from the CDX response and may be empty.
+type urlRecord struct {
+	URL        string
+	StatusCode string
 }
 
-func urlsToObservations(urls []string) []endpointObservation {
-	observations := make([]endpointObservation, 0, len(urls))
-	for _, u := range urls {
-		observations = append(observations, endpointObservation{URL: u})
+func urlRecordsToObservations(records []urlRecord) []endpointObservation {
+	observations := make([]endpointObservation, 0, len(records))
+	for _, r := range records {
+		var sc int
+		if n, err := strconv.Atoi(r.StatusCode); err == nil {
+			sc = n
+		}
+		observations = append(observations, endpointObservation{URL: r.URL, StatusCode: sc})
 	}
-
 	return observations
 }
 
@@ -102,7 +107,7 @@ func aggregateEndpoints(observations []endpointObservation, source string) []End
 			order = append(order, key)
 		}
 
-		et.Observations = append(et.Observations, ExampleURL{Source: source, URL: normalizedURL})
+		et.Observations = append(et.Observations, ExampleURL{Source: source, URL: normalizedURL, StatusCode: observation.StatusCode})
 		et.Count++
 	}
 
@@ -115,7 +120,7 @@ func aggregateEndpoints(observations []endpointObservation, source string) []End
 }
 
 // FetchURLs loads archived URLs for the provided domain and optional path prefix.
-func (f WaybackFetcher) FetchURLs(ctx context.Context, domain string, pathPrefix string) ([]string, error) {
+func (f WaybackFetcher) FetchURLs(ctx context.Context, domain string, pathPrefix string) ([]urlRecord, error) {
 	target, normalizedPrefix, err := buildWaybackQueryTarget(domain, pathPrefix)
 	if err != nil {
 		return nil, err
@@ -129,7 +134,7 @@ func (f WaybackFetcher) FetchURLs(ctx context.Context, domain string, pathPrefix
 	pages := []int{-1}
 	if paginationSupported {
 		if pageCount == 0 {
-			return []string{}, nil
+			return []urlRecord{}, nil
 		}
 
 		pages = make([]int, 0, pageCount)
@@ -138,7 +143,7 @@ func (f WaybackFetcher) FetchURLs(ctx context.Context, domain string, pathPrefix
 		}
 	}
 
-	results := make([]string, 0)
+	results := make([]urlRecord, 0)
 	seenPaths := make(map[string]struct{})
 
 	for _, pageIndex := range pages {
@@ -171,7 +176,7 @@ func (f WaybackFetcher) FetchURLs(ctx context.Context, domain string, pathPrefix
 			}
 
 			seenPaths[dedupePath] = struct{}{}
-			results = append(results, normalizedURL)
+			results = append(results, urlRecord{URL: normalizedURL, StatusCode: record.StatusCode})
 		}
 	}
 
@@ -342,6 +347,14 @@ func buildWaybackQueryTarget(domain string, pathPrefix string) (string, string, 
 	}
 
 	return normalizedDomain + normalizedPrefix, normalizedPrefix, nil
+}
+
+// ValidateWaybackDomain reports whether domain is a valid hostname or URL that
+// can be used as a Wayback Machine scan target. It applies the same normalisation
+// rules used by FetchWaybackURLs.
+func ValidateWaybackDomain(domain string) error {
+	_, err := normalizeDomain(domain)
+	return err
 }
 
 func normalizeDomain(input string) (string, error) {
