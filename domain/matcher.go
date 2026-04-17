@@ -4,7 +4,8 @@ import (
 	"strings"
 )
 
-// MatchTemplates merges endpoint templates from multiple sources into a deduplicated list.
+// MatchTemplates merges endpoint templates from multiple sources into a deduplicated list,
+// then runs ID and observation inference on the merged result.
 // Templates from different sources match when they have the same HTTP method and their path
 // templates share the same static segments (parameter placeholders are treated as wildcards).
 //
@@ -39,7 +40,7 @@ func MatchTemplates(sources ...[]EndpointTemplate) []EndpointTemplate {
 	for _, k := range order {
 		result = append(result, *byKey[k])
 	}
-	return result
+	return InferIDs(result)
 }
 
 // templateMatchKey returns a normalized form of a path template for equality comparison.

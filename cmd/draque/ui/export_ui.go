@@ -109,7 +109,11 @@ func (m exportModel) handleEnter() (exportModel, tea.Cmd) {
 			if url == "" {
 				continue
 			}
-			fmt.Fprintln(f, url)
+			method := ep.Method
+			if method == "" {
+				method = "GET"
+			}
+			fmt.Fprintf(f, "%s %s\n", method, url)
 			written++
 		}
 
