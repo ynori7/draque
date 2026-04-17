@@ -9,41 +9,13 @@ Features:
 
 ## Commands
 
-### Wayback
+### Draque
+
+The Draque tool is an interactive UI which allows you to scan data from various sources, merge them, and analyze the results.
+
+Usage:
 
 ```bash
-go run ./cmd/wayback/main.go <domain> [path-prefix]
-```
-
-### Access Log Parser
-
-```bash
-go run ./cmd/accesslog/main.go <log-file-path> <input-format-pattern>
-```
-
-Example pattern (nginx-like):
-
-```text
-{remote_addr} {host} - [{time_local}] "{method} {path} {protocol}" {status}
-```
-
-The following placeholders have meaning for this scanner:
-
-- host
-- path
-- method
-- status
-
-### Swagger Parser
-
-```bash
-go run ./cmd/swagger/main.go <swagger-file-path>
-```
-
-### Match Parser
-
-This tool lets you combine the other three and merges the results. Brackets signify that the parameter is optional.
-
-```bash
-match [-swagger <file>] [-accesslog <file> -log-pattern <pattern>] [-wayback <domain> [-path-prefix <prefix>]]
+go build -o draque cmd/draque/main.go
+./draque
 ```
