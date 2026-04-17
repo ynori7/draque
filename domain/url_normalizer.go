@@ -23,6 +23,19 @@ var excludedSegments = map[string]struct{}{
 	"p2p": {},
 }
 
+// isExcludedSegment reports whether a path segment should be treated as a static token
+// rather than a dynamic parameter. It matches the segment exactly, or as a prefix/suffix,
+// against the whitelisted patterns (comparison is case-insensitive).
+func isExcludedSegment(seg string) bool {
+	lower := strings.ToLower(seg)
+	for key := range excludedSegments {
+		if lower == key || strings.HasPrefix(lower, key) || strings.HasSuffix(lower, key) {
+			return true
+		}
+	}
+	return false
+}
+
 // NormalizeURL converts a raw absolute URL into a NormalizedPath (template + inferred parameters)
 // and returns the normalized full URL string for observation storage.
 func NormalizeURL(rawURL string) (NormalizedPath, string, error) {
@@ -72,7 +85,7 @@ func inferPathTemplate(cleanedPath string) (string, []Parameter) {
 			continue
 		}
 
-		if _, excluded := excludedSegments[strings.ToLower(seg)]; excluded {
+		if isExcludedSegment(seg) {
 			result = append(result, seg)
 			continue
 		}

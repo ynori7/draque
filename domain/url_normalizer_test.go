@@ -136,6 +136,27 @@ func TestNormalizeURLTemplate(t *testing.T) {
 			wantNormalized: "https://example.com/api/p2p/nodes",
 		},
 		{
+			name:           "segment ending with whitelisted suffix stays static",
+			rawURL:         "https://example.com/users-v2/me",
+			wantTemplate:   "/users-v2/me",
+			wantParams:     []Parameter{},
+			wantNormalized: "https://example.com/users-v2/me",
+		},
+		{
+			name:           "segment ending with whitelisted suffix (camelCase) stays static, sibling with digit becomes id",
+			rawURL:         "https://example.com/usersV2/1a2Z3",
+			wantTemplate:   "/usersV2/{id}",
+			wantParams:     []Parameter{{Name: "id", Type: "int", Source: "inferred"}},
+			wantNormalized: "https://example.com/usersV2/1a2Z3",
+		},
+		{
+			name:           "segment starting with whitelisted prefix stays static",
+			rawURL:         "https://example.com/e2e-test/generateUser",
+			wantTemplate:   "/e2e-test/generateUser",
+			wantParams:     []Parameter{},
+			wantNormalized: "https://example.com/e2e-test/generateUser",
+		},
+		{
 			name:         "query string sorted deterministically",
 			rawURL:       "https://example.com/api/users?b=2&a=1",
 			wantTemplate: "/api/users",
