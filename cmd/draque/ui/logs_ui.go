@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"charm.land/bubbles/v2/textinput"
@@ -23,7 +24,9 @@ type logsModel struct {
 	fileInput    textinput.Model
 	patternInput textinput.Model
 	initCmd      tea.Cmd
-	filePath     string   // stored after validation
+	filePath     string   // stored after validation (file or directory)
+	isDir        bool     // true when filePath is a directory
+	dirFiles     []string // regular files found in the directory
 	prevPatterns []string // patterns from existing log sources
 	menuCursor   int      // cursor on the pattern choice menu
 	fileErr      string
@@ -32,8 +35,8 @@ type logsModel struct {
 
 func newLogsModel(prevPatterns []string) logsModel {
 	fi := textinput.New()
-	fi.Placeholder = "/var/log/access.log"
-	fi.Prompt = "  Log file path: "
+	fi.Placeholder = "/var/log/access.log  or  /var/log/nginx/"
+	fi.Prompt = "  Log file/dir path: "
 	fi.SetWidth(60)
 	fs := fi.Styles()
 	fs.Focused.Prompt = subtleStyle
@@ -104,15 +107,38 @@ func (m logsModel) handleEnter() (logsModel, tea.Cmd) {
 	case logsStepFilePath:
 		p := strings.TrimSpace(m.fileInput.Value())
 		if p == "" {
-			m.fileErr = "File path is required."
+			m.fileErr = "A file or directory path is required."
 			return m, nil
 		}
-		if _, err := os.Stat(p); err != nil {
-			m.fileErr = fmt.Sprintf("File not found: %s", p)
+		info, err := os.Stat(p)
+		if err != nil {
+			m.fileErr = fmt.Sprintf("Path not found: %s", p)
 			return m, nil
 		}
 		m.fileErr = ""
 		m.filePath = p
+		if info.IsDir() {
+			entries, err := os.ReadDir(p)
+			if err != nil {
+				m.fileErr = fmt.Sprintf("Cannot read directory: %v", err)
+				return m, nil
+			}
+			var files []string
+			for _, e := range entries {
+				if !e.IsDir() {
+					files = append(files, filepath.Join(p, e.Name()))
+				}
+			}
+			if len(files) == 0 {
+				m.fileErr = "No files found in that directory."
+				return m, nil
+			}
+			m.isDir = true
+			m.dirFiles = files
+		} else {
+			m.isDir = false
+			m.dirFiles = nil
+		}
 		if len(m.prevPatterns) > 0 {
 			m.step = logsStepPatternChoice
 			m.menuCursor = 0
@@ -142,16 +168,33 @@ func (m logsModel) handleEnter() (logsModel, tea.Cmd) {
 	return m, nil
 }
 
-// validateAndFinish compiles + first-line-validates pattern then emits done or error.
+// validateAndFinish compiles + validates the pattern then emits the done message.
+// For a directory, validation runs against the first file; invalid files at scan
+// time are reported by the scan UI but do not abort the overall scan.
 func (m logsModel) validateAndFinish(pattern string) (logsModel, tea.Cmd) {
 	compiled, err := domain.CompileAccessLogPattern(pattern)
 	if err != nil {
 		m.patternErr = fmt.Sprintf("Invalid pattern: %v", err)
-		if m.step == logsStepPatternChoice {
-			// Show error on choice step; user can try another option.
-		}
 		return m, nil
 	}
+
+	if m.isDir {
+		// Validate pattern against the first file in the directory.
+		if len(m.dirFiles) > 0 {
+			if err := validateFirstLogLine(m.dirFiles[0], compiled); err != nil {
+				m.patternErr = err.Error() + " — please choose or enter a different pattern."
+				return m, nil
+			}
+		}
+		m.patternErr = ""
+		dir := m.filePath
+		var sources []logSource
+		for _, f := range m.dirFiles {
+			sources = append(sources, logSource{FilePath: f, Pattern: pattern})
+		}
+		return m, func() tea.Msg { return logsDirDoneMsg{dir: dir, sources: sources} }
+	}
+
 	if err := validateFirstLogLine(m.filePath, compiled); err != nil {
 		m.patternErr = err.Error() + " — please choose or enter a different pattern."
 		if m.step == logsStepPatternChoice {
@@ -173,6 +216,7 @@ func (m logsModel) View() tea.View {
 func (m logsModel) render() string {
 	var sb strings.Builder
 	sb.WriteString("\n  " + headerStyle.Render("Add access log source") + "\n\n")
+	sb.WriteString("  " + subtleStyle.Render("Enter a file path or a directory — all files in the directory will use the same format pattern.") + "\n\n")
 
 	sb.WriteString(m.fileInput.View() + "\n")
 	if m.fileErr != "" {

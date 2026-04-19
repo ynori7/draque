@@ -29,7 +29,15 @@ const (
 
 type waybackDoneMsg struct{ source waybackSource }
 type logsDoneMsg struct{ source logSource }
+type logsDirDoneMsg struct {
+	dir     string
+	sources []logSource
+}
 type swaggerDoneMsg struct{ filePath string }
+type swaggerDirDoneMsg struct {
+	dir   string
+	files []string
+}
 type scanFinishedMsg struct{ results [][]domain.EndpointTemplate }
 type searchDoneMsg struct{ endpoint *domain.EndpointTemplate } // nil = user went back
 type exportDoneMsg struct {
@@ -233,6 +241,16 @@ func (m appModel) updateSubMode(msg tea.Msg) (tea.Model, tea.Cmd) {
 		)
 		return m, m.input.Focus()
 
+	case logsDirDoneMsg:
+		m.state.logSources = append(m.state.logSources, msg.sources...)
+		m.mode = modeMain
+		m.activeSub = nil
+		m.output = fmt.Sprintf("  %s %s",
+			successStyle.Render(fmt.Sprintf("Added %d log source(s) from directory:", len(msg.sources))),
+			logsStyle.Render(msg.dir),
+		)
+		return m, m.input.Focus()
+
 	case swaggerDoneMsg:
 		m.state.swaggerSources = append(m.state.swaggerSources, msg.filePath)
 		m.mode = modeMain
@@ -240,6 +258,16 @@ func (m appModel) updateSubMode(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.output = fmt.Sprintf("  %s %s",
 			successStyle.Render("Added swagger source:"),
 			swaggerStyle.Render(msg.filePath),
+		)
+		return m, m.input.Focus()
+
+	case swaggerDirDoneMsg:
+		m.state.swaggerSources = append(m.state.swaggerSources, msg.files...)
+		m.mode = modeMain
+		m.activeSub = nil
+		m.output = fmt.Sprintf("  %s %s",
+			successStyle.Render(fmt.Sprintf("Added %d swagger sources from directory:", len(msg.files))),
+			swaggerStyle.Render(msg.dir),
 		)
 		return m, m.input.Focus()
 

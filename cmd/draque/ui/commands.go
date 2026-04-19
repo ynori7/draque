@@ -16,8 +16,8 @@ func renderHelp(scanned bool) string {
 	type entry struct{ cmd, desc string }
 	entries := []entry{
 		{"wayback", "Add a Wayback Machine source (domain + optional path prefix)"},
-		{"logs", "Add an access log source (file path + format pattern)"},
-		{"swagger", "Add a Swagger/OpenAPI spec source (file path)"},
+		{"logs", "Add an access log source (file or directory path + format pattern)"},
+		{"swagger", "Add a Swagger/OpenAPI spec source (file or directory path)"},
 		{"status", "Show configured sources and scan summary"},
 		{"scan", "Fetch and merge all configured sources (with progress)"},
 	}
