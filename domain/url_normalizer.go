@@ -18,7 +18,13 @@ var excludedSegments = map[string]struct{}{
 	"v3":  {},
 	"v4":  {},
 	"v5":  {},
+	"v6":  {},
+	"v7":  {},
+	"v8":  {},
+	"v9":  {},
 	"b2b": {},
+	"b2c": {},
+	"b2p": {},
 	"e2e": {},
 	"p2p": {},
 }
