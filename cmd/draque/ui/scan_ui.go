@@ -23,7 +23,8 @@ type scanErrMsg struct {
 	label string
 	err   error
 }
-type scanDoneMsg struct{ results [][]domain.EndpointTemplate }
+type mergingMsg struct{}
+type scanDoneMsg struct{ results []domain.EndpointTemplate }
 
 // ---- model ----
 
@@ -42,7 +43,6 @@ type scanModel struct {
 	stepsDone  int
 	current    string
 	completed  []completedEntry
-	allResults [][]domain.EndpointTemplate
 	done       bool
 	quitting   bool
 }
@@ -124,8 +124,11 @@ func (m scanModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		pct := float64(m.stepsDone) / float64(m.totalSteps)
 		return m, tea.Batch(m.progress.SetPercent(pct), waitForActivity(m.ch))
 
+	case mergingMsg:
+		m.current = "merging results…"
+		return m, waitForActivity(m.ch)
+
 	case scanDoneMsg:
-		m.allResults = msg.results
 		m.done = true
 		// Signal the parent model that scanning is complete.
 		results := msg.results
@@ -195,6 +198,8 @@ func (m scanModel) render() string {
 }
 
 // doScan runs all source fetches sequentially, pushing progress messages into ch.
+// Merging and inference are also performed here, in the background goroutine, so
+// the UI event loop is never blocked by the O(n²) inference step.
 func doScan(state *appState, ch chan<- tea.Msg) {
 	defer close(ch)
 	var allResults [][]domain.EndpointTemplate
@@ -202,7 +207,7 @@ func doScan(state *appState, ch chan<- tea.Msg) {
 	for _, s := range state.waybackSources {
 		label := fmt.Sprintf("wayback: %s%s", s.Domain, s.PathPrefix)
 		ch <- sourceStartMsg{label: label}
-		endpoints, err := domain.FetchWaybackURLs(context.Background(), s.Domain, s.PathPrefix)
+		endpoints, err := domain.FetchWaybackURLs(context.Background(), s.Domain, s.PathPrefix, state.limits)
 		if err != nil {
 			ch <- scanErrMsg{label: label, err: err}
 			continue
@@ -214,7 +219,12 @@ func doScan(state *appState, ch chan<- tea.Msg) {
 	for _, s := range state.logSources {
 		label := fmt.Sprintf("logs: %s", s.FilePath)
 		ch <- sourceStartMsg{label: label}
-		endpoints, err := domain.ParseAccessLog(s.FilePath, s.Pattern)
+		compiled, err := domain.CompileAccessLogPattern(s.Pattern)
+		if err != nil {
+			ch <- scanErrMsg{label: label, err: err}
+			continue
+		}
+		endpoints, err := domain.ParseAccessLogWithPattern(s.FilePath, compiled, state.limits)
 		if err != nil {
 			ch <- scanErrMsg{label: label, err: err}
 			continue
@@ -235,5 +245,8 @@ func doScan(state *appState, ch chan<- tea.Msg) {
 		ch <- sourceDoneMsg{label: label, count: len(endpoints)}
 	}
 
-	ch <- scanDoneMsg{results: allResults}
+	// Merge and run inference in this goroutine so the UI thread stays responsive.
+	ch <- mergingMsg{}
+	merged := domain.MatchTemplatesWithLimits(state.limits, allResults...)
+	ch <- scanDoneMsg{results: merged}
 }

@@ -180,6 +180,36 @@ func TestParseAccessLog(t *testing.T) {
 	}
 }
 
+func TestParseAccessLogDeduplicatesObservations(t *testing.T) {
+	t.Helper()
+
+	tempDir := t.TempDir()
+	logPath := filepath.Join(tempDir, "dedup.log")
+
+	// Same URL appears three times in the log; should produce a single observation.
+	lines := []byte("example.com/api/users/123\nexample.com/api/users/123\nexample.com/api/users/123\n")
+	if err := os.WriteFile(logPath, lines, 0o600); err != nil {
+		t.Fatalf("write temp log file: %v", err)
+	}
+
+	results, err := ParseAccessLog(logPath, `{host}{path}`)
+	if err != nil {
+		t.Fatalf("ParseAccessLog returned error: %v", err)
+	}
+
+	if len(results) != 1 {
+		t.Fatalf("unexpected number of templates: want 1, got %d", len(results))
+	}
+
+	if got := len(results[0].Observations); got != 1 {
+		t.Fatalf("expected 1 deduplicated observation, got %d: %+v", got, results[0].Observations)
+	}
+
+	if results[0].Count != 3 {
+		t.Fatalf("expected Count=3, got %d", results[0].Count)
+	}
+}
+
 func TestParseAccessLogDefaultsWhenMethodAndStatusAreMissing(t *testing.T) {
 	t.Helper()
 

@@ -18,6 +18,7 @@ type Draque struct {
 	swaggerSources []string
 	errorOnFailure bool
 	configErr      error
+	limits         domain.ScanLimits
 }
 
 type waybackSource struct {
@@ -120,6 +121,23 @@ func WithErrorOnFailure(v bool) Option {
 	}
 }
 
+// WithMaxObservations caps the number of observation URLs stored per endpoint.
+// This bounds memory usage when processing large log files.
+// A value of zero (the default) means no limit.
+func WithMaxObservations(n int) Option {
+	return func(d *Draque) {
+		d.limits.MaxObservations = n
+	}
+}
+
+// WithMaxExamples caps the number of example parameter values stored per endpoint.
+// A value of zero (the default) means no limit.
+func WithMaxExamples(n int) Option {
+	return func(d *Draque) {
+		d.limits.MaxExamples = n
+	}
+}
+
 // Scan processes all configured sources in order (Wayback, logs, Swagger)
 // and returns the merged, deduplicated set of endpoint templates.
 //
@@ -133,7 +151,7 @@ func (d *Draque) Scan() ([]domain.EndpointTemplate, error) {
 	var allResults [][]domain.EndpointTemplate
 
 	for _, s := range d.waybackSources {
-		endpoints, err := domain.FetchWaybackURLs(context.Background(), s.domain, s.pathPrefix)
+		endpoints, err := domain.FetchWaybackURLs(context.Background(), s.domain, s.pathPrefix, d.limits)
 		if err != nil {
 			if d.errorOnFailure {
 				return nil, fmt.Errorf("wayback %q: %w", s.domain, err)
@@ -144,7 +162,14 @@ func (d *Draque) Scan() ([]domain.EndpointTemplate, error) {
 	}
 
 	for _, s := range d.logSources {
-		endpoints, err := domain.ParseAccessLog(s.filePath, s.pattern)
+		compiled, err := domain.CompileAccessLogPattern(s.pattern)
+		if err != nil {
+			if d.errorOnFailure {
+				return nil, fmt.Errorf("log file %q: %w", s.filePath, err)
+			}
+			continue
+		}
+		endpoints, err := domain.ParseAccessLogWithPattern(s.filePath, compiled, d.limits)
 		if err != nil {
 			if d.errorOnFailure {
 				return nil, fmt.Errorf("log file %q: %w", s.filePath, err)
@@ -169,5 +194,5 @@ func (d *Draque) Scan() ([]domain.EndpointTemplate, error) {
 		return nil, nil
 	}
 
-	return domain.MatchTemplates(allResults...), nil
+	return domain.MatchTemplatesWithLimits(d.limits, allResults...), nil
 }

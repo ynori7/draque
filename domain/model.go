@@ -45,3 +45,10 @@ type endpointObservation struct {
 	Method     string
 	StatusCode int // 0 means unknown
 }
+
+// ScanLimits caps per-endpoint list sizes to bound memory usage when processing
+// large log files. A zero value for either field means no limit.
+type ScanLimits struct {
+	MaxObservations int // maximum number of observation URLs stored per endpoint (0 = unlimited)
+	MaxExamples     int // maximum number of example parameter values stored per endpoint (0 = unlimited)
+}

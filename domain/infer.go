@@ -24,11 +24,17 @@ var genericParamRegexp = regexp.MustCompile(`^(id\d*|uuid\d*)$`)
 // Only endpoints with no real observations (from wayback or logs sources) are eligible.
 // Inferred examples carry Source "inferred" and are deduplicated.
 func InferIDs(endpoints []EndpointTemplate) []EndpointTemplate {
+	return inferIDsInternal(endpoints, ScanLimits{})
+}
+
+// inferIDsInternal is the internal implementation of InferIDs that accepts per-endpoint
+// size limits for examples.
+func inferIDsInternal(endpoints []EndpointTemplate, limits ScanLimits) []EndpointTemplate {
 	result := make([]EndpointTemplate, len(endpoints))
 	copy(result, endpoints)
 
-	inferFromParentEndpoints(result)
-	inferFromMatchingParamNames(result)
+	inferFromParentEndpoints(result, limits)
+	inferFromMatchingParamNames(result, limits)
 	inferObservations(result)
 
 	return result
@@ -101,14 +107,21 @@ func extractValuesFromObservations(template string, observations []ExampleURL) m
 //   - both segments are parameter placeholders with the same name.
 //
 // If multiple parents qualify, the one with the most segments wins.
-func inferFromParentEndpoints(endpoints []EndpointTemplate) {
+func inferFromParentEndpoints(endpoints []EndpointTemplate, limits ScanLimits) {
+	// Pre-compute path segments for all endpoints once to avoid redundant splits
+	// inside the O(n²) comparison loop.
+	segs := make([][]string, len(endpoints))
+	for i, ep := range endpoints {
+		segs[i] = strings.Split(ep.PathTemplate, "/")
+	}
+
 	for i := range endpoints {
 		child := &endpoints[i]
 		if hasRealValues(*child) || len(child.Parameters) == 0 {
 			continue
 		}
 
-		childSegs := strings.Split(child.PathTemplate, "/")
+		childSegs := segs[i]
 
 		var bestParent *EndpointTemplate
 		bestLen := 0
@@ -121,7 +134,7 @@ func inferFromParentEndpoints(endpoints []EndpointTemplate) {
 			if !hasRealValues(*parent) {
 				continue
 			}
-			parentSegs := strings.Split(parent.PathTemplate, "/")
+			parentSegs := segs[j]
 			if len(parentSegs) >= len(childSegs) {
 				continue // parent must be strictly shorter
 			}
@@ -162,7 +175,7 @@ func inferFromParentEndpoints(endpoints []EndpointTemplate) {
 		vals := extractValuesFromObservations(bestParent.PathTemplate, bestParent.Observations)
 		for paramName, values := range vals {
 			for _, v := range values {
-				child.Examples = appendUniqueExamples(child.Examples, ExampleParameter{
+				child.Examples = appendUniqueExamples(child.Examples, limits.MaxExamples, ExampleParameter{
 					ParamName: paramName,
 					Value:     v,
 					Source:    "inferred",
@@ -230,7 +243,7 @@ func inferObservations(endpoints []EndpointTemplate) {
 // real observations, then applies those values to endpoints with no real observations that
 // use the same parameter names. Generic names (id, id2, uuid, uuid2, etc.) are excluded
 // because they carry no semantic identity across unrelated endpoints.
-func inferFromMatchingParamNames(endpoints []EndpointTemplate) {
+func inferFromMatchingParamNames(endpoints []EndpointTemplate, limits ScanLimits) {
 	// Build global corpus: non-generic param name → unique observed values.
 	type pkey struct{ name, value string }
 	seenGlobal := make(map[pkey]struct{})
@@ -269,7 +282,7 @@ func inferFromMatchingParamNames(endpoints []EndpointTemplate) {
 				continue
 			}
 			for _, v := range globalVals[param.Name] {
-				ep.Examples = appendUniqueExamples(ep.Examples, ExampleParameter{
+				ep.Examples = appendUniqueExamples(ep.Examples, limits.MaxExamples, ExampleParameter{
 					ParamName: param.Name,
 					Value:     v,
 					Source:    "inferred",

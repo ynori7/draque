@@ -14,6 +14,16 @@ import (
 // with duplicates removed. Counts are summed (swagger templates have Count=0 and do not
 // inflate the total).
 func MatchTemplates(sources ...[]EndpointTemplate) []EndpointTemplate {
+	return matchTemplatesInternal(ScanLimits{}, sources...)
+}
+
+// MatchTemplatesWithLimits is like MatchTemplates but applies per-endpoint size caps
+// during merging and inference as configured in limits.
+func MatchTemplatesWithLimits(limits ScanLimits, sources ...[]EndpointTemplate) []EndpointTemplate {
+	return matchTemplatesInternal(limits, sources...)
+}
+
+func matchTemplatesInternal(limits ScanLimits, sources ...[]EndpointTemplate) []EndpointTemplate {
 	byKey := make(map[string]*EndpointTemplate)
 	order := make([]string, 0)
 
@@ -27,7 +37,7 @@ func MatchTemplates(sources ...[]EndpointTemplate) []EndpointTemplate {
 
 			key := method + "\x00" + templateMatchKey(et.PathTemplate)
 			if existing, ok := byKey[key]; ok {
-				mergeInto(existing, et)
+				mergeInto(existing, et, limits)
 			} else {
 				copy := et
 				byKey[key] = &copy
@@ -40,7 +50,7 @@ func MatchTemplates(sources ...[]EndpointTemplate) []EndpointTemplate {
 	for _, k := range order {
 		result = append(result, *byKey[k])
 	}
-	return InferIDs(result)
+	return inferIDsInternal(result, limits)
 }
 
 // templateMatchKey returns a normalized form of a path template for equality comparison.
@@ -61,13 +71,13 @@ func templateMatchKey(template string) string {
 //   - Examples: combine across both, removing exact duplicates
 //   - Observations: combine across both, removing exact duplicates
 //   - Count: summed (swagger count is 0 and does not inflate the total)
-func mergeInto(base *EndpointTemplate, other EndpointTemplate) {
+func mergeInto(base *EndpointTemplate, other EndpointTemplate, limits ScanLimits) {
 	if !hasSwaggerParams(*base) && hasSwaggerParams(other) {
 		base.PathTemplate = other.PathTemplate
 		base.Parameters = other.Parameters
 	}
-	base.Examples = appendUniqueExamples(base.Examples, other.Examples...)
-	base.Observations = appendUniqueObservations(base.Observations, other.Observations...)
+	base.Examples = appendUniqueExamples(base.Examples, limits.MaxExamples, other.Examples...)
+	base.Observations = appendUniqueObservations(base.Observations, limits.MaxObservations, other.Observations...)
 	base.Count += other.Count
 }
 
@@ -80,13 +90,19 @@ func hasSwaggerParams(et EndpointTemplate) bool {
 	return false
 }
 
-func appendUniqueExamples(dst []ExampleParameter, src ...ExampleParameter) []ExampleParameter {
+func appendUniqueExamples(dst []ExampleParameter, max int, src ...ExampleParameter) []ExampleParameter {
+	if max > 0 && len(dst) >= max {
+		return dst
+	}
 	type key struct{ ParamName, Value, Source string }
 	seen := make(map[key]struct{}, len(dst))
 	for _, e := range dst {
 		seen[key{e.ParamName, e.Value, e.Source}] = struct{}{}
 	}
 	for _, e := range src {
+		if max > 0 && len(dst) >= max {
+			break
+		}
 		k := key{e.ParamName, e.Value, e.Source}
 		if _, ok := seen[k]; !ok {
 			dst = append(dst, e)
@@ -96,7 +112,10 @@ func appendUniqueExamples(dst []ExampleParameter, src ...ExampleParameter) []Exa
 	return dst
 }
 
-func appendUniqueObservations(dst []ExampleURL, src ...ExampleURL) []ExampleURL {
+func appendUniqueObservations(dst []ExampleURL, max int, src ...ExampleURL) []ExampleURL {
+	if max > 0 && len(dst) >= max {
+		return dst
+	}
 	type key struct {
 		Source     string
 		URL        string
@@ -107,6 +126,9 @@ func appendUniqueObservations(dst []ExampleURL, src ...ExampleURL) []ExampleURL 
 		seen[key{o.Source, o.URL, o.StatusCode}] = struct{}{}
 	}
 	for _, o := range src {
+		if max > 0 && len(dst) >= max {
+			break
+		}
 		k := key{o.Source, o.URL, o.StatusCode}
 		if _, ok := seen[k]; !ok {
 			dst = append(dst, o)

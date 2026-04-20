@@ -38,7 +38,7 @@ type swaggerDirDoneMsg struct {
 	dir   string
 	files []string
 }
-type scanFinishedMsg struct{ results [][]domain.EndpointTemplate }
+type scanFinishedMsg struct{ results []domain.EndpointTemplate }
 type searchDoneMsg struct{ endpoint *domain.EndpointTemplate } // nil = user went back
 type exportDoneMsg struct {
 	count int
@@ -82,7 +82,12 @@ func NewAppModel() appModel {
 	blinkCmd := ti.Focus()
 
 	return appModel{
-		state:   &appState{},
+		state: &appState{
+			limits: domain.ScanLimits{
+				MaxObservations: 10,
+				MaxExamples:     10,
+			},
+		},
 		mode:    modeMain,
 		input:   ti,
 		initCmd: blinkCmd,
@@ -273,7 +278,7 @@ func (m appModel) updateSubMode(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case scanFinishedMsg:
 		if len(msg.results) > 0 {
-			m.state.results = domain.MatchTemplates(msg.results...)
+			m.state.results = msg.results
 			m.state.scanned = true
 		}
 		m.mode = modeMain

@@ -18,6 +18,7 @@ type appState struct {
 	swaggerSources []string
 	results        []domain.EndpointTemplate
 	scanned        bool
+	limits         domain.ScanLimits
 }
 
 // Reset clears all configured sources and scan data, returning to an empty state.

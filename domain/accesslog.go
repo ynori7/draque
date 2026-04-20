@@ -99,11 +99,17 @@ func ParseAccessLog(filePath string, pattern string) ([]EndpointTemplate, error)
 		return nil, err
 	}
 
-	return ParseAccessLogWithPattern(filePath, compiledPattern)
+	return ParseAccessLogWithPattern(filePath, compiledPattern, ScanLimits{})
 }
 
 // ParseAccessLogWithPattern parses one log file with a pre-compiled pattern.
-func ParseAccessLogWithPattern(filePath string, pattern *AccessLogPattern) ([]EndpointTemplate, error) {
+// Observations per endpoint are capped to limits.MaxObservations when non-zero.
+//
+// Unlike the previous implementation, URL normalization is performed exactly once per
+// log line — the NormalizedPath produced during parsing is reused directly for
+// aggregation, eliminating the redundant second call that the old two-pass approach
+// required.
+func ParseAccessLogWithPattern(filePath string, pattern *AccessLogPattern, limits ScanLimits) ([]EndpointTemplate, error) {
 	if pattern == nil || pattern.re == nil {
 		return nil, fmt.Errorf("compiled log pattern is required")
 	}
@@ -117,7 +123,14 @@ func ParseAccessLogWithPattern(filePath string, pattern *AccessLogPattern) ([]En
 	scanner := bufio.NewScanner(file)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 
-	observations := make([]endpointObservation, 0)
+	byTemplate := make(map[string]*EndpointTemplate, 4096)
+	order := make([]string, 0, 4096)
+	type obsKey struct {
+		URL        string
+		StatusCode int
+	}
+	seenObs := make(map[string]map[obsKey]struct{}, 4096)
+
 	for scanner.Scan() {
 		method, host, requestPath, statusCode, ok := pattern.parseLine(scanner.Text())
 		if !ok {
@@ -133,28 +146,61 @@ func ParseAccessLogWithPattern(filePath string, pattern *AccessLogPattern) ([]En
 			continue
 		}
 
-		_, normalizedURL, err := NormalizeURL(rawURL)
+		np, normalizedURL, err := NormalizeURL(rawURL)
 		if err != nil {
 			continue
 		}
 
-		var statusInt int
-		if sc, err := strconv.Atoi(statusCode); err == nil {
-			statusInt = sc
+		key := np.Template
+		if method != "" {
+			key = method + "\x00" + np.Template
 		}
 
-		observations = append(observations, endpointObservation{
-			URL:        normalizedURL,
-			Method:     method,
-			StatusCode: statusInt,
-		})
+		et, exists := byTemplate[key]
+		if !exists {
+			et = &EndpointTemplate{
+				Method:       method,
+				PathTemplate: np.Template,
+				Parameters:   np.Parameters,
+			}
+			byTemplate[key] = et
+			order = append(order, key)
+		}
+
+		et.Count++
+		if limits.MaxObservations == 0 || len(et.Observations) < limits.MaxObservations {
+			var statusInt int
+			if sc, err := strconv.Atoi(statusCode); err == nil {
+				statusInt = sc
+			}
+			ok := obsKey{normalizedURL, statusInt}
+			if seenObs[key] == nil {
+				cap := limits.MaxObservations
+				if cap == 0 {
+					cap = 16
+				}
+				seenObs[key] = make(map[obsKey]struct{}, cap)
+			}
+			if _, dup := seenObs[key][ok]; !dup {
+				et.Observations = append(et.Observations, ExampleURL{
+					Source:     "logs",
+					URL:        normalizedURL,
+					StatusCode: statusInt,
+				})
+				seenObs[key][ok] = struct{}{}
+			}
+		}
 	}
 
 	if err := scanner.Err(); err != nil {
 		return nil, fmt.Errorf("scan log file: %w", err)
 	}
 
-	return aggregateEndpoints(observations, "logs"), nil
+	result := make([]EndpointTemplate, 0, len(order))
+	for _, tmpl := range order {
+		result = append(result, *byTemplate[tmpl])
+	}
+	return result, nil
 }
 
 // TryParseLine reports whether the given log line matches this pattern.

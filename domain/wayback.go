@@ -41,7 +41,8 @@ type WaybackFetcher struct {
 
 // FetchWaybackURLs loads archived URLs from the public Internet Archive CDX API and
 // aggregates them into endpoint templates grouped by normalized path template.
-func FetchWaybackURLs(ctx context.Context, domain string, pathPrefix string) ([]EndpointTemplate, error) {
+// Observations per endpoint are capped to limits.MaxObservations when non-zero.
+func FetchWaybackURLs(ctx context.Context, domain string, pathPrefix string, limits ScanLimits) ([]EndpointTemplate, error) {
 	fetcher := WaybackFetcher{
 		BaseURL: DefaultWaybackCDXEndpoint,
 		HTTPClient: &http.Client{
@@ -54,7 +55,7 @@ func FetchWaybackURLs(ctx context.Context, domain string, pathPrefix string) ([]
 		return nil, err
 	}
 
-	return aggregateEndpoints(urlRecordsToObservations(records), "wayback"), nil
+	return aggregateEndpoints(urlRecordsToObservations(records), "wayback", limits), nil
 }
 
 // urlRecord is a lightweight pair of (normalized URL, HTTP status code string) returned
@@ -78,9 +79,15 @@ func urlRecordsToObservations(records []urlRecord) []endpointObservation {
 
 // aggregateEndpoints converts a list of normalized URLs into endpoint templates by
 // grouping on the normalized path template and collecting observations.
-func aggregateEndpoints(observations []endpointObservation, source string) []EndpointTemplate {
+// Observations per endpoint are capped to limits.MaxObservations when non-zero.
+func aggregateEndpoints(observations []endpointObservation, source string, limits ScanLimits) []EndpointTemplate {
 	byTemplate := make(map[string]*EndpointTemplate, len(observations))
 	order := make([]string, 0, len(observations))
+	type obsKey struct {
+		URL        string
+		StatusCode int
+	}
+	seenObs := make(map[string]map[obsKey]struct{}, len(observations))
 
 	for _, observation := range observations {
 		normalizedURL := observation.URL
@@ -107,8 +114,21 @@ func aggregateEndpoints(observations []endpointObservation, source string) []End
 			order = append(order, key)
 		}
 
-		et.Observations = append(et.Observations, ExampleURL{Source: source, URL: normalizedURL, StatusCode: observation.StatusCode})
 		et.Count++
+		if limits.MaxObservations == 0 || len(et.Observations) < limits.MaxObservations {
+			ok := obsKey{normalizedURL, observation.StatusCode}
+			if seenObs[key] == nil {
+				cap := limits.MaxObservations
+				if cap == 0 {
+					cap = 16
+				}
+				seenObs[key] = make(map[obsKey]struct{}, cap)
+			}
+			if _, dup := seenObs[key][ok]; !dup {
+				et.Observations = append(et.Observations, ExampleURL{Source: source, URL: normalizedURL, StatusCode: observation.StatusCode})
+				seenObs[key][ok] = struct{}{}
+			}
+		}
 	}
 
 	result := make([]EndpointTemplate, 0, len(order))
