@@ -3,6 +3,7 @@ package domain
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -71,7 +72,36 @@ func validateOpenAPIVersion(doc map[string]interface{}) error {
 	return fmt.Errorf("missing openapi version field (expected \"swagger\" or \"openapi\" key)")
 }
 
+// extractServerPrefix returns the path component from the first entry in the
+// OpenAPI v3 "servers" array, to be prepended to every path in the spec.
+// Returns an empty string when there is no meaningful prefix.
+func extractServerPrefix(doc map[string]interface{}) string {
+	servers, ok := doc["servers"].([]interface{})
+	if !ok || len(servers) == 0 {
+		return ""
+	}
+
+	first, ok := servers[0].(map[string]interface{})
+	if !ok {
+		return ""
+	}
+
+	rawURL, _ := first["url"].(string)
+	if rawURL == "" {
+		return ""
+	}
+
+	u, err := url.Parse(rawURL)
+	if err != nil || u.Path == "" || u.Path == "/" {
+		return ""
+	}
+
+	return strings.TrimRight(u.Path, "/")
+}
+
 func extractEndpoints(doc map[string]interface{}) []EndpointTemplate {
+	prefix := extractServerPrefix(doc)
+
 	paths, ok := doc["paths"].(map[string]interface{})
 	if !ok {
 		return []EndpointTemplate{}
@@ -102,7 +132,7 @@ func extractEndpoints(doc map[string]interface{}) []EndpointTemplate {
 
 			result = append(result, EndpointTemplate{
 				Method:       strings.ToUpper(method),
-				PathTemplate: pathStr,
+				PathTemplate: prefix + pathStr,
 				Parameters:   params,
 			})
 		}

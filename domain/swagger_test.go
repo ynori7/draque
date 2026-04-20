@@ -365,6 +365,107 @@ paths:
 				{Method: "GET", PathTemplate: "/ping"},
 			},
 		},
+		// --- servers prefix (OpenAPI v3) ---
+		{
+			name: "openapi v3 json - servers prefix applied to all paths",
+			file: "spec.json",
+			content: `{
+				"openapi": "3.0.0",
+				"servers": [{"url": "https://api.example.com/v1/users"}],
+				"paths": {
+					"/getUser": {
+						"get": {}
+					},
+					"/{userId}": {
+						"delete": {
+							"parameters": [
+								{"name": "userId", "in": "path", "schema": {"type": "integer"}}
+							]
+						}
+					}
+				}
+			}`,
+			want: []EndpointTemplate{
+				{
+					Method:       "DELETE",
+					PathTemplate: "/v1/users/{userId}",
+					Parameters:   []Parameter{{Name: "userId", Type: "int", Source: "swagger"}},
+				},
+				{Method: "GET", PathTemplate: "/v1/users/getUser"},
+			},
+		},
+		{
+			name: "openapi v3 yaml - servers prefix applied",
+			file: "spec.yaml",
+			content: `openapi: "3.0.0"
+servers:
+  - url: https://api.example.com/api/v2
+paths:
+  /ping:
+    get: {}
+`,
+			want: []EndpointTemplate{
+				{Method: "GET", PathTemplate: "/api/v2/ping"},
+			},
+		},
+		{
+			name: "openapi v3 json - servers url with no path prefix ignored",
+			file: "spec.json",
+			content: `{
+				"openapi": "3.0.0",
+				"servers": [{"url": "https://api.example.com"}],
+				"paths": {
+					"/health": {"get": {}}
+				}
+			}`,
+			want: []EndpointTemplate{
+				{Method: "GET", PathTemplate: "/health"},
+			},
+		},
+		{
+			name: "openapi v3 json - servers url with root path ignored",
+			file: "spec.json",
+			content: `{
+				"openapi": "3.0.0",
+				"servers": [{"url": "https://api.example.com/"}],
+				"paths": {
+					"/health": {"get": {}}
+				}
+			}`,
+			want: []EndpointTemplate{
+				{Method: "GET", PathTemplate: "/health"},
+			},
+		},
+		{
+			name: "openapi v3 json - multiple servers uses first entry",
+			file: "spec.json",
+			content: `{
+				"openapi": "3.0.0",
+				"servers": [
+					{"url": "https://api.example.com/v1"},
+					{"url": "https://api.example.com/v2"}
+				],
+				"paths": {
+					"/items": {"get": {}}
+				}
+			}`,
+			want: []EndpointTemplate{
+				{Method: "GET", PathTemplate: "/v1/items"},
+			},
+		},
+		{
+			name: "openapi v3 json - no servers section no prefix",
+			file: "spec.json",
+			content: `{
+				"openapi": "3.0.0",
+				"paths": {
+					"/status": {"get": {}}
+				}
+			}`,
+			want: []EndpointTemplate{
+				{Method: "GET", PathTemplate: "/status"},
+			},
+		},
 		{
 			name: "missing paths key returns empty slice",
 			file: "spec.json",
