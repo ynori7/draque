@@ -72,10 +72,19 @@ func validateOpenAPIVersion(doc map[string]interface{}) error {
 	return fmt.Errorf("missing openapi version field (expected \"swagger\" or \"openapi\" key)")
 }
 
-// extractServerPrefix returns the path component from the first entry in the
-// OpenAPI v3 "servers" array, to be prepended to every path in the spec.
+// extractServerPrefix returns the path prefix to prepend to every path in the spec.
+//
+// For OpenAPI v2 it reads the top-level "basePath" field (e.g. "/api/v1").
+// For OpenAPI v3 it reads the path component of the first "servers[].url" entry
+// (e.g. "https://api.example.com/v1/users" → "/v1/users").
 // Returns an empty string when there is no meaningful prefix.
 func extractServerPrefix(doc map[string]interface{}) string {
+	// OpenAPI v2: top-level "basePath"
+	if bp, ok := doc["basePath"].(string); ok && bp != "" && bp != "/" {
+		return strings.TrimRight(bp, "/")
+	}
+
+	// OpenAPI v3: "servers[0].url" path component
 	servers, ok := doc["servers"].([]interface{})
 	if !ok || len(servers) == 0 {
 		return ""

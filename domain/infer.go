@@ -204,14 +204,17 @@ func inferObservations(endpoints []EndpointTemplate) {
 		if hasRealValues(*ep) { // no need to infer if we already have real observations
 			continue
 		}
-		if len(ep.Examples) == 0 { // we have no parameter values to substitute, so we can't infer a meaningful URL
-			continue
-		}
 
 		// Substitute example param values into the path template.
 		path := ep.PathTemplate
 		for _, ex := range ep.Examples {
 			path = strings.ReplaceAll(path, "{"+ex.ParamName+"}", ex.Value)
+		}
+
+		// Only create an inferred observation if every placeholder was resolved;
+		// a URL with remaining {param} segments is incomplete and not useful.
+		if strings.Contains(path, "{") {
+			continue
 		}
 
 		ep.Observations = append(ep.Observations, ExampleURL{

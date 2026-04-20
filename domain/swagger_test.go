@@ -250,7 +250,7 @@ func TestParseSwaggerSpec(t *testing.T) {
 			},
 		},
 		{
-			name: "openapi v2 json - unsupported fields ignored",
+			name: "openapi v2 json - top-level metadata fields and basePath",
 			file: "spec.json",
 			content: `{
 				"swagger": "2.0",
@@ -275,7 +275,7 @@ func TestParseSwaggerSpec(t *testing.T) {
 				}
 			}`,
 			want: []EndpointTemplate{
-				{Method: "GET", PathTemplate: "/ping"},
+				{Method: "GET", PathTemplate: "/api/ping"},
 			},
 		},
 		{
@@ -458,6 +458,73 @@ paths:
 			file: "spec.json",
 			content: `{
 				"openapi": "3.0.0",
+				"paths": {
+					"/status": {"get": {}}
+				}
+			}`,
+			want: []EndpointTemplate{
+				{Method: "GET", PathTemplate: "/status"},
+			},
+		},
+		// --- basePath (OpenAPI v2) ---
+		{
+			name: "openapi v2 json - basePath applied to all paths",
+			file: "spec.json",
+			content: `{
+				"swagger": "2.0",
+				"basePath": "/api/v1",
+				"paths": {
+					"/users": {"get": {}},
+					"/users/{userId}": {
+						"get": {
+							"parameters": [
+								{"name": "userId", "in": "path", "type": "integer"}
+							]
+						}
+					}
+				}
+			}`,
+			want: []EndpointTemplate{
+				{Method: "GET", PathTemplate: "/api/v1/users"},
+				{
+					Method:       "GET",
+					PathTemplate: "/api/v1/users/{userId}",
+					Parameters:   []Parameter{{Name: "userId", Type: "int", Source: "swagger"}},
+				},
+			},
+		},
+		{
+			name: "openapi v2 yaml - basePath applied",
+			file: "spec.yaml",
+			content: `swagger: "2.0"
+basePath: /v2
+paths:
+  /ping:
+    get: {}
+`,
+			want: []EndpointTemplate{
+				{Method: "GET", PathTemplate: "/v2/ping"},
+			},
+		},
+		{
+			name: "openapi v2 json - basePath of root slash ignored",
+			file: "spec.json",
+			content: `{
+				"swagger": "2.0",
+				"basePath": "/",
+				"paths": {
+					"/health": {"get": {}}
+				}
+			}`,
+			want: []EndpointTemplate{
+				{Method: "GET", PathTemplate: "/health"},
+			},
+		},
+		{
+			name: "openapi v2 json - no basePath no prefix",
+			file: "spec.json",
+			content: `{
+				"swagger": "2.0",
 				"paths": {
 					"/status": {"get": {}}
 				}

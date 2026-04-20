@@ -579,3 +579,49 @@ func TestInferIDs_Part3_AddsObservationWhenResolved(t *testing.T) {
 		t.Errorf("expected inferred observation https://example.com/v1/users/123/settings, got: %+v", settings.Observations)
 	}
 }
+
+func TestInferIDs_Part3_SkipsPartiallyResolved(t *testing.T) {
+	// An endpoint with two parameters where only one can be resolved must NOT get
+	// an inferred observation URL that still contains an unsubstituted placeholder.
+	endpoints := []EndpointTemplate{
+		{
+			Method:       "GET",
+			PathTemplate: "/v1/org/{orgId}",
+			Observations: []ExampleURL{{Source: "wayback", URL: "https://example.com/v1/org/10"}},
+		},
+		{
+			Method:       "GET",
+			PathTemplate: "/v1/org/{orgId}/item/{itemId}",
+			Parameters: []Parameter{
+				{Name: "orgId", Type: "int", Source: "swagger"},
+				{Name: "itemId", Type: "int", Source: "swagger"},
+			},
+			// orgId is inferred from the parent endpoint; itemId has no known value
+		},
+	}
+
+	result := InferIDs(endpoints)
+
+	child := result[1]
+
+	// orgId should be present in Examples (inference still runs)
+	foundOrgId := false
+	for _, ex := range child.Examples {
+		if ex.ParamName == "orgId" {
+			foundOrgId = true
+		}
+	}
+	if !foundOrgId {
+		t.Fatalf("expected orgId to be inferred in Examples, got: %+v", child.Examples)
+	}
+
+	// No inferred observation should be created because itemId is still unresolved.
+	for _, obs := range child.Observations {
+		if strings.Contains(obs.URL, "{") {
+			t.Errorf("inferred observation URL must not contain unresolved placeholders, got: %s", obs.URL)
+		}
+	}
+	if len(child.Observations) != 0 {
+		t.Errorf("expected no inferred observations when not all placeholders can be resolved, got: %+v", child.Observations)
+	}
+}
