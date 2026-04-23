@@ -6,6 +6,7 @@ Features:
 - Find endpoints via log files
 - Find and understand endpoints from Swagger docs
 - Take all known endpoints from all sources, group them together by route, collect relevant IDs, and automatically infer valid input data for similar endpoints.
+- Analyze top routes and top parameters with examples for each.
 
 ## Usage
 
@@ -28,7 +29,7 @@ The tool supports the following commands:
 - status:  Show configured sources and scan summary
 - scan: Fetch and merge all configured sources (with progress)
 - analyze: Show statistics about scan results (only available after scanning)
-- search: Search endpoints live as you type and view details (only available after scanning)
+- search: Search endpoints or parameters live as you type and view details (only available after scanning)
 - export: Export one representative URL per endpoint template to a file (one per line) (only available after scanning)
 - reset: Clear all sources and scan data for a fresh start (only available after scanning)
 
@@ -58,6 +59,12 @@ func main() {
 
         // Parse all Swagger/OpenAPI specs (.json, .yaml, .yml) in a directory
         draque.WithSwaggerDirectory("/path/to/swagger/specs"),
+
+        // Sets the maximum number of example values to track per parameter
+        draque.WithMaxExamples(5),
+
+        // Sets the maximum number of observed URLs to track per route
+        draque.WithMaxObservations(5),
     )
 
     templates, err := d.Scan()
@@ -83,3 +90,5 @@ func main() {
 | `WithSwagger(path)` | Parse a single Swagger/OpenAPI spec file (JSON or YAML). |
 | `WithSwaggerDirectory(path)` | Parse all `.json`, `.yaml`, and `.yml` files in a directory as Swagger specs. |
 | `WithErrorOnFailure(true)` | Return immediately on the first source failure instead of skipping it. |
+| `WithMaxExamples(int)` | Sets the maximum number of example values to track per parameter. Default unlimited. |
+| `WithMaxObservations(int)` | Sets the maximum number of observed URLs to track per route. Default unlimited. |

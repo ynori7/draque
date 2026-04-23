@@ -223,7 +223,7 @@ func TestNormalizeURLTemplate(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			np, normalized, err := NormalizeURL(tc.rawURL)
+			np, normalized, _, err := NormalizeURL(tc.rawURL)
 
 			if tc.wantErr {
 				if err == nil {
@@ -264,7 +264,7 @@ func TestNormalizeURLQueryDoesNotAffectTemplate(t *testing.T) {
 	}
 
 	for _, rawURL := range urls {
-		np, _, err := NormalizeURL(rawURL)
+		np, _, _, err := NormalizeURL(rawURL)
 		if err != nil {
 			t.Fatalf("NormalizeURL(%q) error: %v", rawURL, err)
 		}
@@ -278,17 +278,69 @@ func TestNormalizeURLQueryDoesNotAffectTemplate(t *testing.T) {
 func TestNormalizeURLQueryAffectsNormalizedURL(t *testing.T) {
 	t.Helper()
 
-	_, url1, err := NormalizeURL("https://example.com/api/users?a=1")
+	_, url1, _, err := NormalizeURL("https://example.com/api/users?a=1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	_, url2, err := NormalizeURL("https://example.com/api/users?a=2")
+	_, url2, _, err := NormalizeURL("https://example.com/api/users?a=2")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
 	if url1 == url2 {
 		t.Errorf("expected different normalized URLs for different query content, got same: %q", url1)
+	}
+}
+
+// TestNormalizeURLReturnsQueryValues verifies that the url.Values returned by NormalizeURL
+// contain the parsed query parameters from the URL.
+func TestNormalizeURLReturnsQueryValues(t *testing.T) {
+	t.Helper()
+
+	tests := []struct {
+		name       string
+		rawURL     string
+		wantValues map[string][]string
+	}{
+		{
+			name:       "no query string",
+			rawURL:     "https://example.com/api/users/123",
+			wantValues: map[string][]string{},
+		},
+		{
+			name:   "single param",
+			rawURL: "https://example.com/api/users?page=2",
+			wantValues: map[string][]string{
+				"page": {"2"},
+			},
+		},
+		{
+			name:   "multiple params",
+			rawURL: "https://example.com/api/users?b=2&a=one",
+			wantValues: map[string][]string{
+				"a": {"one"},
+				"b": {"2"},
+			},
+		},
+		{
+			name:   "fragment stripped but params kept",
+			rawURL: "https://example.com/api/users?x=1#fragment",
+			wantValues: map[string][]string{
+				"x": {"1"},
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, _, qv, err := NormalizeURL(tc.rawURL)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !reflect.DeepEqual(map[string][]string(qv), tc.wantValues) {
+				t.Errorf("query values\n  want: %v\n   got: %v", tc.wantValues, map[string][]string(qv))
+			}
+		})
 	}
 }

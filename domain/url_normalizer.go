@@ -42,15 +42,17 @@ func isExcludedSegment(seg string) bool {
 	return false
 }
 
-// NormalizeURL converts a raw absolute URL into a NormalizedPath (template + inferred parameters)
-// and returns the normalized full URL string for observation storage.
-func NormalizeURL(rawURL string) (NormalizedPath, string, error) {
-	normalized, _, cleanedPath, ok := canonicalizeURL(rawURL)
+// NormalizeURL converts a raw absolute URL into a NormalizedPath (template + inferred parameters),
+// returns the normalized full URL string for observation storage, and returns the parsed query
+// values from the URL. The url.Values map is the same one allocated by url.Parse inside
+// canonicalizeURL — no additional allocation occurs.
+func NormalizeURL(rawURL string) (NormalizedPath, string, url.Values, error) {
+	normalized, _, cleanedPath, qv, ok := canonicalizeURL(rawURL)
 	if !ok {
-		return NormalizedPath{}, "", fmt.Errorf("invalid or unsupported URL: %q", rawURL)
+		return NormalizedPath{}, "", nil, fmt.Errorf("invalid or unsupported URL: %q", rawURL)
 	}
 	if cleanedPath == "/" {
-		return NormalizedPath{}, "", fmt.Errorf("URL has no meaningful path: %q", rawURL)
+		return NormalizedPath{}, "", nil, fmt.Errorf("URL has no meaningful path: %q", rawURL)
 	}
 
 	template, parameters := inferPathTemplate(cleanedPath)
@@ -58,7 +60,7 @@ func NormalizeURL(rawURL string) (NormalizedPath, string, error) {
 	return NormalizedPath{
 		Template:   template,
 		Parameters: parameters,
-	}, normalized, nil
+	}, normalized, qv, nil
 }
 
 // inferPathTemplate inspects each segment of a cleaned path, replaces dynamic segments with
@@ -118,21 +120,23 @@ func inferPathTemplate(cleanedPath string) (string, []Parameter) {
 }
 
 // canonicalizeURL normalizes scheme, host, port, path, and query parameters for a raw URL.
-// Returns (normalizedURL, host, cleanedPath, ok). Returns false for invalid or non-http(s) URLs.
-func canonicalizeURL(rawURL string) (string, string, string, bool) {
+// Returns (normalizedURL, host, cleanedPath, queryValues, ok). Returns false for invalid or non-http(s) URLs.
+// The returned url.Values is the map allocated by parsedURL.Query() — callers may reuse it
+// without additional allocation.
+func canonicalizeURL(rawURL string) (string, string, string, url.Values, bool) {
 	parsedURL, err := url.Parse(rawURL)
 	if err != nil || !parsedURL.IsAbs() {
-		return "", "", "", false
+		return "", "", "", nil, false
 	}
 
 	scheme := strings.ToLower(parsedURL.Scheme)
 	if scheme != "http" && scheme != "https" {
-		return "", "", "", false
+		return "", "", "", nil, false
 	}
 
 	hostname := strings.ToLower(parsedURL.Hostname())
 	if hostname == "" {
-		return "", "", "", false
+		return "", "", "", nil, false
 	}
 
 	port := parsedURL.Port()
@@ -156,12 +160,13 @@ func canonicalizeURL(rawURL string) (string, string, string, bool) {
 		cleanedPath = "/" + cleanedPath
 	}
 
-	sortedQuery := parsedURL.Query().Encode()
+	qv := parsedURL.Query() // allocates url.Values map; we reuse it instead of discarding
+	sortedQuery := qv.Encode()
 	parsedURL.Path = cleanedPath
 	parsedURL.RawPath = ""
 	parsedURL.RawQuery = sortedQuery
 
-	return parsedURL.String(), host, cleanedPath, true
+	return parsedURL.String(), host, cleanedPath, qv, true
 }
 
 func containsDigit(s string) bool {

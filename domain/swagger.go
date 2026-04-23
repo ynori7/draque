@@ -141,13 +141,33 @@ func extractEndpoints(doc map[string]interface{}) []EndpointTemplate {
 
 			result = append(result, EndpointTemplate{
 				Method:       strings.ToUpper(method),
-				PathTemplate: prefix + pathStr,
+				PathTemplate: normalizePathTemplate(prefix + pathStr),
 				Parameters:   params,
 			})
 		}
 	}
 
 	return result
+}
+
+// normalizePathTemplate strips inline validation patterns from path-parameter placeholders.
+// Some router frameworks embed constraints directly in the path string, for example:
+//
+//	{id:[0-9]+}           → {id}
+//	{env:test|stage|prod} → {env}
+//
+// Segments that are not parameter placeholders (no surrounding braces) are left unchanged.
+func normalizePathTemplate(pathTemplate string) string {
+	segments := strings.Split(pathTemplate, "/")
+	for i, seg := range segments {
+		if len(seg) > 2 && seg[0] == '{' && seg[len(seg)-1] == '}' {
+			inner := seg[1 : len(seg)-1]
+			if idx := strings.IndexByte(inner, ':'); idx >= 0 {
+				segments[i] = "{" + inner[:idx] + "}"
+			}
+		}
+	}
+	return strings.Join(segments, "/")
 }
 
 // mergeParameters merges path-level and operation-level parameters.
@@ -206,6 +226,15 @@ func extractParameters(raw interface{}) []Parameter {
 		}
 
 		name, _ := p["name"].(string)
+		if name == "" {
+			continue
+		}
+		// Strip inline validation constraints from the parameter name.
+		// Some router frameworks embed constraints in the name field, e.g.
+		// "env:test|stage|prod" or "id:[0-9]+" — keep only the part before the colon.
+		if idx := strings.IndexByte(name, ':'); idx >= 0 {
+			name = name[:idx]
+		}
 		if name == "" {
 			continue
 		}

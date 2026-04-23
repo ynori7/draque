@@ -146,7 +146,7 @@ func ParseAccessLogWithPattern(filePath string, pattern *AccessLogPattern, limit
 			continue
 		}
 
-		np, normalizedURL, err := NormalizeURL(rawURL)
+		np, normalizedURL, _, err := NormalizeURL(rawURL)
 		if err != nil {
 			continue
 		}
@@ -190,6 +190,7 @@ func ParseAccessLogWithPattern(filePath string, pattern *AccessLogPattern, limit
 				seenObs[key][ok] = struct{}{}
 			}
 		}
+
 	}
 
 	if err := scanner.Err(); err != nil {

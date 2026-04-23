@@ -91,7 +91,7 @@ func aggregateEndpoints(observations []endpointObservation, source string, limit
 
 	for _, observation := range observations {
 		normalizedURL := observation.URL
-		np, _, err := NormalizeURL(normalizedURL)
+		np, _, _, err := NormalizeURL(normalizedURL)
 		if err != nil {
 			continue
 		}
@@ -129,6 +129,7 @@ func aggregateEndpoints(observations []endpointObservation, source string, limit
 				seenObs[key][ok] = struct{}{}
 			}
 		}
+
 	}
 
 	result := make([]EndpointTemplate, 0, len(order))
@@ -443,7 +444,7 @@ func normalizePrefix(input string) string {
 // Returns the normalized URL, a path-only dedupe key, the cleaned path, and a boolean indicating whether the URL is valid for
 // consideration. Returns false if the URL is invalid or should be excluded.
 func normalizeWaybackResultURL(rawURL string) (string, string, string, bool) {
-	normalizedURL, host, cleanedPath, ok := canonicalizeURL(rawURL)
+	normalizedURL, host, cleanedPath, _, ok := canonicalizeURL(rawURL)
 	if !ok {
 		return "", "", "", false
 	}

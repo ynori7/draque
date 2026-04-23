@@ -132,6 +132,40 @@ func renderAnalyze(state *appState) string {
 			countStyle.Render(fmt.Sprintf("count: %d", ep.Count)),
 		))
 	}
+
+	// Aggregate route parameters across all endpoints.
+	// For each param name, count how many unique route templates contain it.
+	paramRouteCounts := buildParamRouteCounts(state.results)
+	if len(paramRouteCounts) > 0 {
+		type paramCount struct {
+			name  string
+			count int
+		}
+		params := make([]paramCount, 0, len(paramRouteCounts))
+		for name, count := range paramRouteCounts {
+			params = append(params, paramCount{name: name, count: count})
+		}
+		sort.Slice(params, func(i, j int) bool {
+			if params[i].count != params[j].count {
+				return params[i].count > params[j].count
+			}
+			return params[i].name < params[j].name
+		})
+		topParams := params
+		if len(topParams) > 10 {
+			topParams = topParams[:10]
+		}
+		sb.WriteString("\n  " + headerStyle.Render("Top route parameters") + " " +
+			subtleStyle.Render("(count = unique routes where parameter appears):") + "\n")
+		for i, pc := range topParams {
+			sb.WriteString(fmt.Sprintf("    %s  %-30s  %s\n",
+				subtleStyle.Render(fmt.Sprintf("%2d.", i+1)),
+				paramStyle.Render(fmt.Sprintf("{%s}", pc.name)),
+				countStyle.Render(fmt.Sprintf("routes: %d", pc.count)),
+			))
+		}
+	}
+
 	return sb.String()
 }
 
@@ -213,8 +247,143 @@ func renderEndpointDetail(ep domain.EndpointTemplate) string {
 	return sb.String()
 }
 
-// pickExampleURL selects one representative URL from a list of observations.
-// When onlyTwoXX is true it prefers 2xx status codes, falling back to status 0
+// buildParamRouteCounts returns a map from route parameter name to the number of
+// unique route templates (METHOD + path) in which that parameter appears.
+func buildParamRouteCounts(results []domain.EndpointTemplate) map[string]int {
+	paramRoutes := make(map[string]map[string]struct{})
+	for _, ep := range results {
+		for _, p := range ep.Parameters {
+			if paramRoutes[p.Name] == nil {
+				paramRoutes[p.Name] = make(map[string]struct{})
+			}
+			paramRoutes[p.Name][ep.Method+"\x00"+ep.PathTemplate] = struct{}{}
+		}
+	}
+	if len(paramRoutes) == 0 {
+		return nil
+	}
+	counts := make(map[string]int, len(paramRoutes))
+	for name, routes := range paramRoutes {
+		counts[name] = len(routes)
+	}
+	return counts
+}
+
+// renderParameterDetail renders the detail view for a selected route parameter,
+// showing its inferred type, sources, example values, and routes where it appears.
+func renderParameterDetail(name string, results []domain.EndpointTemplate) string {
+	type routeInfo struct {
+		method   string
+		template string
+	}
+	var routes []routeInfo
+	typeSet := make(map[string]struct{})
+	sourceSet := make(map[string]struct{})
+	var examples []domain.ExampleParameter
+
+	for _, ep := range results {
+		found := false
+		for _, p := range ep.Parameters {
+			if p.Name == name {
+				found = true
+				typeSet[p.Type] = struct{}{}
+				sourceSet[p.Source] = struct{}{}
+				break
+			}
+		}
+		if !found {
+			continue
+		}
+		routes = append(routes, routeInfo{ep.Method, ep.PathTemplate})
+		for _, ex := range ep.Examples {
+			if ex.ParamName == name {
+				examples = append(examples, ex)
+			}
+		}
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("\n  %s %s %s\n",
+		subtleStyle.Render("----"),
+		headerStyle.Render("route param: ")+paramStyle.Render(fmt.Sprintf("{%s}", name)),
+		subtleStyle.Render("----"),
+	))
+	sb.WriteString(fmt.Sprintf("  %s  %s\n",
+		headerStyle.Render("Unique routes:"),
+		countStyle.Render(fmt.Sprintf("%d", len(routes))),
+	))
+
+	if len(typeSet) > 0 {
+		types := make([]string, 0, len(typeSet))
+		for t := range typeSet {
+			types = append(types, t)
+		}
+		sort.Strings(types)
+		sb.WriteString(fmt.Sprintf("  %s  %s\n",
+			headerStyle.Render("Types:"),
+			strings.Join(types, ", "),
+		))
+	}
+
+	if len(sourceSet) > 0 {
+		srcs := make([]string, 0, len(sourceSet))
+		for s := range sourceSet {
+			srcs = append(srcs, s)
+		}
+		sort.Strings(srcs)
+		colored := make([]string, 0, len(srcs))
+		for _, s := range srcs {
+			colored = append(colored, sourceStyle(s).Render(s))
+		}
+		sb.WriteString(fmt.Sprintf("  %s  %s\n",
+			headerStyle.Render("Sources:"),
+			strings.Join(colored, subtleStyle.Render(", ")),
+		))
+	}
+
+	if len(examples) > 0 {
+		sb.WriteString("\n  " + headerStyle.Render("Example values:") + "\n")
+		shown := examples
+		if len(shown) > 10 {
+			shown = shown[:10]
+		}
+		for _, ex := range shown {
+			sb.WriteString(fmt.Sprintf("    %s %s\n",
+				ex.Value,
+				subtleStyle.Render(fmt.Sprintf("(from %s)", ex.Source)),
+			))
+		}
+		if len(examples) > 10 {
+			sb.WriteString(fmt.Sprintf("    %s\n",
+				subtleStyle.Render(fmt.Sprintf("  … and %d more", len(examples)-10)),
+			))
+		}
+	}
+
+	if len(routes) > 0 {
+		const maxRoutes = 5
+		sb.WriteString("\n  " + headerStyle.Render("Routes where seen:") + "\n")
+		shown := routes
+		if len(shown) > maxRoutes {
+			shown = shown[:maxRoutes]
+		}
+		for _, r := range shown {
+			sb.WriteString(fmt.Sprintf("    %s  %s\n",
+				methodColor(r.method).Render(fmt.Sprintf("%-6s", r.method)),
+				pathStyle.Render(r.template),
+			))
+		}
+		if len(routes) > maxRoutes {
+			sb.WriteString(fmt.Sprintf("    %s\n",
+				subtleStyle.Render(fmt.Sprintf("  … and %d more", len(routes)-maxRoutes)),
+			))
+		}
+	}
+
+	return sb.String()
+}
+
+// pickExampleURL selects one representative URL from a list of observations.// When onlyTwoXX is true it prefers 2xx status codes, falling back to status 0
 // (unknown). Entries with a known non-2xx status are skipped when onlyTwoXX is true.
 func pickExampleURL(observations []domain.ExampleURL, onlyTwoXX bool) string {
 	if !onlyTwoXX {

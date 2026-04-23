@@ -578,6 +578,103 @@ paths:
 			content: `null`,
 			wantErr: true,
 		},
+		// --- inline validation patterns in path parameters ---
+		{
+			name: "path param with regex validation is normalized",
+			file: "spec.json",
+			content: `{
+				"swagger": "2.0",
+				"paths": {
+					"/users/{id:[0-9]+}": {
+						"get": {
+							"parameters": [
+								{"name": "id", "in": "path", "type": "integer"}
+							]
+						}
+					}
+				}
+			}`,
+			want: []EndpointTemplate{
+				{
+					Method:       "GET",
+					PathTemplate: "/users/{id}",
+					Parameters:   []Parameter{{Name: "id", Type: "int", Source: "swagger"}},
+				},
+			},
+		},
+		{
+			name: "path param with enum validation is normalized",
+			file: "spec.json",
+			content: `{
+				"swagger": "2.0",
+				"paths": {
+					"/deploy/{env:test|stage|prod}": {
+						"get": {
+							"parameters": [
+								{"name": "env", "in": "path", "type": "string"}
+							]
+						}
+					}
+				}
+			}`,
+			want: []EndpointTemplate{
+				{
+					Method:       "GET",
+					PathTemplate: "/deploy/{env}",
+					Parameters:   []Parameter{{Name: "env", Type: "string", Source: "swagger"}},
+				},
+			},
+		},
+		{
+			name: "validation suffix in parameter name field is also stripped",
+			file: "spec.json",
+			content: `{
+				"swagger": "2.0",
+				"paths": {
+					"/deploy/{env:test|stage|prod}": {
+						"get": {
+							"parameters": [
+								{"name": "env:test|stage|prod", "in": "path", "type": "string"}
+							]
+						}
+					}
+				}
+			}`,
+			want: []EndpointTemplate{
+				{
+					Method:       "GET",
+					PathTemplate: "/deploy/{env}",
+					Parameters:   []Parameter{{Name: "env", Type: "string", Source: "swagger"}},
+				},
+			},
+		},
+		{
+			name: "multiple path params with mixed validation are all normalized",
+			file: "spec.json",
+			content: `{
+				"swagger": "2.0",
+				"paths": {
+					"/orgs/{org}/repos/{repoId:[0-9]+}": {
+						"get": {
+							"parameters": [
+								{"name": "org", "in": "path", "type": "string"},
+								{"name": "repoId", "in": "path", "type": "integer"}
+							]
+						}
+					}
+				}
+			}`,
+			want: []EndpointTemplate{
+				{
+					Method:       "GET",
+					PathTemplate: "/orgs/{org}/repos/{repoId}",
+					Parameters: []Parameter{
+						{Name: "org", Type: "string", Source: "swagger"},
+						{Name: "repoId", Type: "int", Source: "swagger"},
+					},
+				},
+			},
+		},
 	}
 
 	for _, tc := range tests {
@@ -613,5 +710,26 @@ func TestParseSwaggerSpecFileNotFound(t *testing.T) {
 	_, err := ParseSwaggerSpec("/nonexistent/path/spec.json")
 	if err == nil {
 		t.Fatal("expected error for missing file, got nil")
+	}
+}
+
+func TestNormalizePathTemplate(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"/users/{id:[0-9]+}", "/users/{id}"},
+		{"/deploy/{env:test|stage|prod}", "/deploy/{env}"},
+		{"/orgs/{org}/repos/{repoId:[0-9]+}", "/orgs/{org}/repos/{repoId}"},
+		{"/users/{id}", "/users/{id}"},
+		{"/health", "/health"},
+		{"/users/{id}/orders/{orderId}", "/users/{id}/orders/{orderId}"},
+	}
+
+	for _, tc := range tests {
+		got := normalizePathTemplate(tc.input)
+		if got != tc.want {
+			t.Errorf("normalizePathTemplate(%q) = %q, want %q", tc.input, got, tc.want)
+		}
 	}
 }

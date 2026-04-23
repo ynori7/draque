@@ -39,7 +39,10 @@ type swaggerDirDoneMsg struct {
 	files []string
 }
 type scanFinishedMsg struct{ results []domain.EndpointTemplate }
-type searchDoneMsg struct{ endpoint *domain.EndpointTemplate } // nil = user went back
+type searchDoneMsg struct {
+	endpoint  *domain.EndpointTemplate // non-nil when a route was selected
+	paramName string                   // non-empty when a route parameter was selected
+}
 type exportDoneMsg struct {
 	count int
 	path  string
@@ -295,7 +298,9 @@ func (m appModel) updateSubMode(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case searchDoneMsg:
 		m.mode = modeMain
 		m.activeSub = nil
-		if msg.endpoint != nil {
+		if msg.paramName != "" {
+			m.output = renderParameterDetail(msg.paramName, m.state.results)
+		} else if msg.endpoint != nil {
 			m.output = renderEndpointDetail(*msg.endpoint)
 		}
 		return m, m.input.Focus()
