@@ -29,9 +29,10 @@ type scanDoneMsg struct{ results []domain.EndpointTemplate }
 // ---- model ----
 
 type completedEntry struct {
-	label string
-	count int
-	isErr bool
+	label  string
+	count  int
+	isErr  bool
+	errMsg string
 }
 
 type scanModel struct {
@@ -120,7 +121,7 @@ func (m scanModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case scanErrMsg:
 		m.stepsDone++
-		m.completed = append(m.completed, completedEntry{label: msg.label, isErr: true})
+		m.completed = append(m.completed, completedEntry{label: msg.label, isErr: true, errMsg: msg.err.Error()})
 		pct := float64(m.stepsDone) / float64(m.totalSteps)
 		return m, tea.Batch(m.progress.SetPercent(pct), waitForActivity(m.ch))
 
@@ -181,6 +182,7 @@ func (m scanModel) render() string {
 				errorStyle.Render("✗"),
 				errorStyle.Render(c.label),
 			))
+			sb.WriteString(fmt.Sprintf("       %s\n", subtleStyle.Render(c.errMsg)))
 		} else {
 			sb.WriteString(fmt.Sprintf("  %s  %-44s %s\n",
 				successStyle.Render("✓"),

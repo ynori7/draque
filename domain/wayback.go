@@ -209,6 +209,55 @@ type cdxRecord struct {
 	StatusCode string
 }
 
+// maxCDXRetries is the number of extra attempts made when the CDX endpoint
+// responds with a transient error (429 rate limiting or a 5xx server error).
+const maxCDXRetries = 3
+
+// cdxUserAgent is sent on all CDX requests. web.archive.org aggressively
+// rate-limits/blocks the default "Go-http-client" User-Agent, so we must
+// identify as something else to get consistent responses.
+const cdxUserAgent = "draque/1.0 (+https://github.com/ynori7/draque)"
+
+// doCDXRequest executes request, retrying with backoff if the response indicates
+// a transient failure (HTTP 429 or 5xx). The Internet Archive's CDX API rate-limits
+// aggressively, so callers should always go through this helper rather than calling
+// the HTTP client directly.
+func (f WaybackFetcher) doCDXRequest(ctx context.Context, request *http.Request) (*http.Response, error) {
+	var lastErr error
+	for attempt := 0; attempt <= maxCDXRetries; attempt++ {
+		if attempt > 0 {
+			delay := retryDelay(attempt)
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(delay):
+			}
+		}
+
+		response, err := f.httpClient().Do(request.Clone(ctx))
+		if err != nil {
+			lastErr = err
+			continue
+		}
+
+		if response.StatusCode == http.StatusTooManyRequests || response.StatusCode >= http.StatusInternalServerError {
+			body, _ := io.ReadAll(io.LimitReader(response.Body, 4096))
+			response.Body.Close()
+			lastErr = fmt.Errorf("status %d: %s", response.StatusCode, strings.TrimSpace(string(body)))
+			continue
+		}
+
+		return response, nil
+	}
+
+	return nil, fmt.Errorf("CDX request failed after %d attempts, most recently: %w", maxCDXRetries+1, lastErr)
+}
+
+// retryDelay returns an exponential backoff delay (1s, 2s, 4s, ...) for the given attempt.
+func retryDelay(attempt int) time.Duration {
+	return time.Duration(1<<uint(attempt-1)) * time.Second
+}
+
 func (f WaybackFetcher) fetchPage(ctx context.Context, target string, pageIndex int) ([]cdxRecord, error) {
 	requestURL, err := f.buildCDXRequestURL(target, pageIndex, false)
 	if err != nil {
@@ -219,8 +268,9 @@ func (f WaybackFetcher) fetchPage(ctx context.Context, target string, pageIndex 
 	if err != nil {
 		return nil, fmt.Errorf("create CDX request: %w", err)
 	}
+	request.Header.Set("User-Agent", cdxUserAgent)
 
-	response, err := f.httpClient().Do(request)
+	response, err := f.doCDXRequest(ctx, request)
 	if err != nil {
 		return nil, fmt.Errorf("request CDX page: %w", err)
 	}
@@ -244,8 +294,9 @@ func (f WaybackFetcher) lookupPageCount(ctx context.Context, target string) (int
 	if err != nil {
 		return 0, false, fmt.Errorf("create pagination request: %w", err)
 	}
+	request.Header.Set("User-Agent", cdxUserAgent)
 
-	response, err := f.httpClient().Do(request)
+	response, err := f.doCDXRequest(ctx, request)
 	if err != nil {
 		return 0, false, fmt.Errorf("request CDX pagination info: %w", err)
 	}
